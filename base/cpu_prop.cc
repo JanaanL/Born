@@ -129,13 +129,13 @@ void cpuProp::sourceProp(int nx, int ny, int nz, bool damp, bool getLast,
 		int id=it/_jtsS;
 		int ii=it-id*_jtsS;
 		index = prop1(p0,p1,_vel1);
-		std::cout << " the current minimum is " << index.min << " and the current max is " << index.max << std::endl;
+	//	std::cout << " the current minimum is " << index.min << " and the current max is " << index.max << std::endl;
 		injectSource(id,ii,p0);
 
 		float *pt=p1; p1=p0; p0=pt;	
 	}
 
-	std::cout << "Calculating the range " << std::endl;
+	//std::cout << "Calculating the range " << std::endl;
 	std::cout << " the current minimum is " << index.min << " and the current max is " << index.max << std::endl;
 	//calculate the range
 	struct range *rg = new range;
@@ -146,23 +146,36 @@ void cpuProp::sourceProp(int nx, int ny, int nz, bool damp, bool getLast,
 	rg->min_z = (index.min / _n12);
 	printf("min_z %d\n",rg->min_z);
 	rg->max_x = (index.max % _n12) % _nx; 
+	printf("max_x %d\n",rg->max_x);
 	rg->max_y = (index.max % _n12) / _nx;
+	printf("max_y %d\n",rg->max_y);
 	rg->max_z = (index.max / _n12);
+	printf("max_z %d\n",rg->max_z);
 	advanceRange(rg, 2);
 	
 	std::cout << "Now going through the rest of the iterations" << std::endl;
 
-	for(int it=11; it<=nt; it++) {
+	for(int it=11; it<=nt/2; it++) {
 		int id=it/_jtsS;
 		int ii=it-id*_jtsS;
 		printf("At time step %d \n",it);
 		prop_range(p0,p1,_vel1,rg);
-		advanceRange(rg, 2);
+		advanceRange(rg, 1);
 		injectSource(id,ii,p0);
 
 		float *pt=p1; p1=p0; p0=pt;	
 	}
 
+	std::cout << "Remaining iterations at full range" << std::endl;
+	for(int it=nt/2 + 1; it<=nt; it++) {
+		int id=it/_jtsS;
+		int ii=it-id*_jtsS;
+		prop(p0,p1,_vel1);
+		injectSource(id,ii,p0);
+
+		float *pt=p1; p1=p0; p0=pt;	
+	}
+	
 	if(nt%2==1){
 	   float *x=new float[_n123];
 	   memcpy(x,p0,sizeof(float)*_n123);
@@ -173,14 +186,12 @@ void cpuProp::sourceProp(int nx, int ny, int nz, bool damp, bool getLast,
 }
 
 void cpuProp::advanceRange(range* rg, int scale){
-	std::cout << "Now in advance Range function " << std::endl;
 	rg->min_x = std::max((rg->min_x - scale), 4);
 	rg->min_y = std::max((rg->min_y - scale), 4);
 	rg->min_z = std::max((rg->min_z - scale), 4);
 	rg->max_x = std::min((rg->max_x + scale), (_nx - 4));
 	rg->max_y = std::min((rg->max_y + scale), (_ny - 4));
 	rg->max_z = std::min((rg->max_z + scale), (_nz - 4));
-	std::cout << "just finished advance Range function " << std::endl;
 }
 
 void cpuProp::stats(float *buf, std::string title){
@@ -295,8 +306,8 @@ void cpuProp::imageAdd(float *img,  float *recField, float *srcField){
 
 void cpuProp::prop(float *p0, const float *p1, const float *vel){
 
-	born_profiler_t profiler;
-	profiler.start();
+//	born_profiler_t profiler;
+//	profiler.start();
 
 //std::cout << "Prop function in cpuProp"<< std::endl;
 tbb::tick_count t0 = tbb::tick_count::now();
@@ -339,14 +350,14 @@ tbb::tick_count t1 = tbb::tick_count::now();
 
 std::cout << "cpuProp::Prop function time in seconds:  " <<  (t1-t0).seconds() << std::endl;
 
-profiler.read();
-profiler.stop();	
+//profiler.read();
+//profiler.stop();	
 }
 
 void cpuProp::prop_range(float *p0, const float *p1, const float *vel, range *coord){
 
-	born_profiler_t profiler;
-	profiler.start();
+//	born_profiler_t profiler;
+//	profiler.start();
 
 //std::cout << "Prop function in cpuProp"<< std::endl;
 tbb::tick_count t0 = tbb::tick_count::now();
@@ -389,8 +400,8 @@ tbb::tick_count t1 = tbb::tick_count::now();
 
 std::cout << "cpuProp::Prop function time in seconds:  " <<  (t1-t0).seconds() << std::endl;
 
-profiler.read();
-profiler.stop();	
+//profiler.read();
+//profiler.stop();	
 }
 
 cpuProp::index cpuProp::prop1(float *p0, const float *p1, const float *vel){
@@ -446,7 +457,7 @@ tbb::parallel_for(tbb::blocked_range<int>(4,_nz-4),[&](
 	index index;
 	index.max = max;
 	index.min = min;
-	std::cout << "Just calculated the min and max's " << std::endl;
+//	std::cout << "Just calculated the min and max's " << std::endl;
 	return index;
 }
 void cpuProp::transferSincTableD(int nsinc, int jtd, std::vector<std::vector<float>> &table){
