@@ -5,6 +5,7 @@
 #include <tbb/parallel_for.h>
 #include "cpu_prop.h"
 #include <papi.h>
+#include <algorithm>
 #define C0  0
 #define CZ1 1
 #define CX1 2
@@ -136,8 +137,8 @@ void cpuProp::sourceProp(int nx, int ny, int nz, bool damp, bool getLast,
 	std::cout << "Calculating the range " << std::endl;
 	//calculate the range
 	range *rg;
-	rg->min_x = (index.min % _n12) % _nx; 
-	printf("min_x %d\n",rg->min_x);
+	rg->min_z = (index.min % _n12) % _nx; 
+	printf("min_x %d\n",rg->min_z);
 	rg->min_y = (index.min % _n12) / _nx;
 	printf("min_y %d\n",rg->min_y);
 	rg->min_z = (index.min / _n12);
