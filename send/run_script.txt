@@ -1,0 +1,13 @@
+#!/bin/bash
+
+export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/opt/apps/papi-5.5.1/src:/opt/apps/papi-5.5.1/src/libpfm4/lib
+
+#rm output.txt
+#touch output.txt
+
+#./example.py
+../bin/RTM3D json=mig.1000.2000.P 
+#/home/supercomputes/apps/sandbox/Born3/bin/RTM3D json=mig.1000.2000.P
+#/home/supercomputes/apps/Born/bin/RTM3D json=mig.1000.2000.P
+#/home/apps/allinea/forge/bin/map ./RTM3D json=mig.2400.1000.P > output.txt
+
