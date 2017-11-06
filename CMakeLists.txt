@@ -21,7 +21,12 @@ FIND_PACKAGE(hypercube NO_MODULE REQUIRED)
 INCLUDE_DIRECTORIES(${hypercube_DIRNAME_include})
 
 FIND_PACKAGE(genericIO NO_MODULE REQUIRED)
-INCLUDE_DIRECTORIES(${genericIO_DIRNAME_include})
+INCLUDE_DIRECTORIES(${hypercube_DIRNAME_include})
+
+INCLUDE_DIRECTORIES(/opt/apps/papi-5.5.1/src)
+INCLUDE_DIRECTORIES(/opt/apps/papi-5.5.1/src/libpfm4/lib)
+LINK_DIRECTORIES(/opt/apps/papi-5.5.1/src)
+LINK_DIRECTORIES(/opt/apps/papi-5.5.1/src/libpfm4/lib)
 
 
 
@@ -33,8 +38,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/base)
 
 ADD_EXECUTABLE(RTM3D rtm.cc)
 ADD_EXECUTABLE(Model3D model.cc)
-TARGET_LINK_LIBRARIES(RTM3D base genericCpp hypercube ${LIBTBB})
-TARGET_LINK_LIBRARIES(Model3D base genericCpp hypercube ${LIBTBB})
+TARGET_LINK_LIBRARIES(RTM3D base genericCpp hypercube ${LIBTBB} papi pfm)
+TARGET_LINK_LIBRARIES(Model3D base genericCpp hypercube ${LIBTBB} papi pfm)
 
 
 add_subdirectory(util)

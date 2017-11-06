@@ -1,8 +1,10 @@
 #include <tbb/tbb.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_reduce.h>
+#include <tbb/tick_count.h>
 #include <tbb/parallel_for.h>
 #include "cpu_prop.h"
+#include <papi.h>
 #define C0  0
 #define CZ1 1
 #define CX1 2
@@ -38,7 +40,7 @@ for(int it=0; it < nt; it++){
 fprintf(stderr,"forward   %d of %d \n",it,nt);
 
 
-	prop(s_p0,s_p1,_vel2);
+    prop(s_p0,s_p1,_vel2);
     prop(r_p0,r_p1,_vel2);
     //stats(s_p0,"after prop");
     damp(s_p0,s_p1);
@@ -67,21 +69,16 @@ void cpuProp::rtmAdjoint(int n1, int n2, int n3, int jtd, float *src_p0, float *
 	std::vector<float> rec_p0(_n123,0.),rec_p1(_n123,0.);
 	float *r_p0=rec_p0.data(), *r_p1=rec_p1.data();
 	_dir=-1;
+	float sm1=0,sm2=0;
+	for(int i=0; i < n1*n2*n3; i++){
+		sm1=sm1+fabsf(src_p0[i]);
+		sm2=sm2+fabsf(src_p1[i]);
+	}
 
-		   float sm1=0,sm2=0;
-		   for(int i=0; i < n1*n2*n3; i++){
-		     sm1=sm1+fabsf(src_p0[i]);
-		     		     sm2=sm2+fabsf(src_p1[i]);
-
-		    }
-
-int ic=0;
+	int ic=0;
 
 	for(int it=nt-1; it >=0; it--) {
-	
-	
-	
-	fprintf(stderr,"running adjoint %d  _nz=%d \n",it,_nz);
+		fprintf(stderr,"running adjoint %d  _nz=%d \n",it,_nz);
 		int id_s=(it+1)/_jtsS;
 		int i_s=it+1-id_s*_jtsS;
 		int id=it/_jtdD;
@@ -97,53 +94,92 @@ int ic=0;
 		injectReceivers(id,ii,r_p0);
 		imageCondition(r_p0,src_p0,img);
 
-
 		float *pt=src_p0;
 		src_p0=src_p1;
 		src_p1=pt;
 		pt=r_p0;
 		r_p0=r_p1;
 		r_p1=pt;
-		
 		ic++;
-
 	}
-
 }
+
 void cpuProp::imageCondition(float *rec, float *src, float *img){
  tbb::parallel_for(tbb::blocked_range<int>(0,_n123),[&](
   const tbb::blocked_range<int>&r){
   for(int  i=r.begin(); i!=r.end(); ++i){
 		img[i]+=src[i]*rec[i];
-	}
+   }
 
-});
+   });
 }
 void cpuProp::sourceProp(int nx, int ny, int nz, bool damp, bool getLast,
 	float *p0, float *p1, int jts, int npts, int nt){
 
     _jt=jts;
-
+	std::cout << "At beginning of sourceProp funciton" << std::endl;
 
 	int n12=_nx*_ny;
 	_dir=1;
-	for(int it=0; it<=nt; it++) {
+	index index;
+	for(int it=0; it<=10; it++) {
+	std::cout << "at time step " << it << std::endl;
 		int id=it/_jtsS;
 		int ii=it-id*_jtsS;
-		prop(p0,p1,_vel1);
-
+		index = prop1(p0,p1,_vel1);
+		std::cout << " the current minimum is " << index.min << " and the current max is " << index.max << std::endl;
 		injectSource(id,ii,p0);
 
 		float *pt=p1; p1=p0; p0=pt;	
 	}
+
+	std::cout << "Calculating the range " << std::endl;
+	//calculate the range
+	range *rg;
+	rg->min_x = (index.min % _n12) % _nx; 
+	printf("min_x %d\n",rg->min_x);
+	rg->min_y = (index.min % _n12) / _nx;
+	printf("min_y %d\n",rg->min_y);
+	rg->min_z = (index.min / _n12);
+	printf("min_z %d\n",rg->min_z);
+	rg->max_x = (index.max % _n12) % _nx; 
+	rg->max_y = (index.max % _n12) / _nx;
+	rg->max_z = (index.max / _n12);
+	advanceRange(rg, 2);
+	
+	std::cout << "Now going through the rest of the iterations" << std::endl;
+
+	for(int it=11; it<=nt; it++) {
+		int id=it/_jtsS;
+		int ii=it-id*_jtsS;
+		printf("At time step %d \n",it);
+		prop_range(p0,p1,_vel1,rg);
+		advanceRange(rg, 2);
+		injectSource(id,ii,p0);
+
+		float *pt=p1; p1=p0; p0=pt;	
+	}
+
 	if(nt%2==1){
 	   float *x=new float[_n123];
 	   memcpy(x,p0,sizeof(float)*_n123);
-	   memcpy(p0,p1,sizeof(float)*_n123);
+	   memcpy(p1,p0,sizeof(float)*_n123);
 	   memcpy(p1,x,sizeof(float)*_n123); 
 	}
 
 }
+
+void cpuProp::advanceRange(range* rg, int scale){
+	std::cout << "Now in advance Range function " << std::endl;
+	rg->min_x = std::max((rg->min_x - scale), 4);
+	rg->min_y = std::max((rg->min_y - scale), 4);
+	rg->min_z = std::max((rg->min_z - scale), 4);
+	rg->max_x = std::min((rg->max_x + scale), (_nx - 4));
+	rg->max_y = std::min((rg->max_y + scale), (_ny - 4));
+	rg->max_z = std::min((rg->max_z + scale), (_nz - 4));
+	std::cout << "just finished advance Range function " << std::endl;
+}
+
 void cpuProp::stats(float *buf, std::string title){
 float en= tbb::parallel_reduce(
         tbb::blocked_range<float*>( &buf[0], &buf[0]+_n123 ),
@@ -160,6 +196,7 @@ float en= tbb::parallel_reduce(
 
 std::cerr<<title<<":STATS:"<<en<<std::endl;
 }
+
 void cpuProp::damp(float *p0,float *p1){
 
      tbb::parallel_for(tbb::blocked_range<int>(4,_nz-4),[&](
@@ -252,42 +289,162 @@ void cpuProp::imageAdd(float *img,  float *recField, float *srcField){
     recField[i]+=.000001*srcField[i]*img[i];
   }});
 }
-void cpuProp::prop(float *p0, float *p1, float *vel){
 
+void cpuProp::prop(float *p0, const float *p1, const float *vel){
 
+	born_profiler_t profiler;
+	profiler.start();
 
-		     tbb::parallel_for(tbb::blocked_range<int>(4,_nz-4),[&](
+//std::cout << "Prop function in cpuProp"<< std::endl;
+tbb::tick_count t0 = tbb::tick_count::now();
+
+tbb::parallel_for(tbb::blocked_range<int>(4,_nz-4),[&](
   const tbb::blocked_range<int>&r){
   for(int  i3=r.begin(); i3!=r.end(); ++i3){
 //	for(int i3=4; i3 < _nz-4; i3++){
-		for(int i2=4; i2 < _ny-4; i2++) {
+		for(int i2=4; i2 < _ny - 4; i2++) {
 			int ii=i2*_nx+4+_n12*i3;
-			for(int i1=4; i1 < _nx-4; i1++,ii++) {
-		       float x=
-				p0[ii]=vel[ii]*
-					      (
-					coeffs[C0]*p1[ii]
-					+coeffs[CX1]*(p1[ii-1]+p1[ii+1])+
-					+coeffs[CX2]*(p1[ii-2]+p1[ii+2])+
-					+coeffs[CX3]*(p1[ii-3]+p1[ii+3])+
-					+coeffs[CX4]*(p1[ii-4]+p1[ii+4])+
-					+coeffs[CY1]*(p1[ii-_nx]+p1[ii+_nx])+
-					+coeffs[CY2]*(p1[ii-2*_nx]+p1[ii+2*_nx])+
-					+coeffs[CY3]*(p1[ii-3*_nx]+p1[ii+3*_nx])+
-					+coeffs[CY4]*(p1[ii-4*_nx]+p1[ii+4*_nx])+
-					+coeffs[CZ1]*(p1[ii-1*_n12]+p1[ii+1*_n12])+
-					+coeffs[CZ2]*(p1[ii-2*_n12]+p1[ii+2*_n12])+
-					+coeffs[CZ3]*(p1[ii-3*_n12]+p1[ii+3*_n12])+
-					+coeffs[CZ4]*(p1[ii-4*_n12]+p1[ii+4*_n12])
-				        )
-				        +p1[ii]+p1[ii]-p0[ii];
+			for(int i1=4; i1 < _nx - 4; i1++,ii++) {
+		        //float x=
+				p0[ii] = vel[ii]*
+				          (
+				             coeffs[C0]*p1[ii]
+					     // x
+					     +coeffs[CX1]*(p1[ii-1]+p1[ii+1])+
+					     +coeffs[CX2]*(p1[ii-2]+p1[ii+2])+
+					     +coeffs[CX3]*(p1[ii-3]+p1[ii+3])+
+					     +coeffs[CX4]*(p1[ii-4]+p1[ii+4])+
+					     // y
+					     +coeffs[CY1]*(p1[ii-_nx]+p1[ii+_nx])+
+					     +coeffs[CY2]*(p1[ii-2*_nx]+p1[ii+2*_nx])+
+					     +coeffs[CY3]*(p1[ii-3*_nx]+p1[ii+3*_nx])+
+					     +coeffs[CY4]*(p1[ii-4*_nx]+p1[ii+4*_nx])+
+					     // z
+					     +coeffs[CZ1]*(p1[ii-1*_n12]+p1[ii+1*_n12])+
+					     +coeffs[CZ2]*(p1[ii-2*_n12]+p1[ii+2*_n12])+
+					     +coeffs[CZ3]*(p1[ii-3*_n12]+p1[ii+3*_n12])+
+					     +coeffs[CZ4]*(p1[ii-4*_n12]+p1[ii+4*_n12])
+					 )
+				        + 2*p1[ii] - p0[ii];
 				        
 				      
 			}
 		}
 	}
 	});
-	
+tbb::tick_count t1 = tbb::tick_count::now();
+
+std::cout << "cpuProp::Prop function time in seconds:  " <<  (t1-t0).seconds() << std::endl;
+
+profiler.read();
+profiler.stop();	
+}
+
+void cpuProp::prop_range(float *p0, const float *p1, const float *vel, range *coord){
+
+	born_profiler_t profiler;
+	profiler.start();
+
+//std::cout << "Prop function in cpuProp"<< std::endl;
+tbb::tick_count t0 = tbb::tick_count::now();
+
+tbb::parallel_for(tbb::blocked_range<int>(coord->min_z,coord->max_z),[&](
+  const tbb::blocked_range<int>&r){
+  for(int  i3=r.begin(); i3!=r.end(); ++i3){
+//	for(int i3=4; i3 < _nz-4; i3++){
+		for(int i2=coord->min_y; i2 < coord->max_y; i2++) {
+			int ii=i2*_nx+4+_n12*i3;
+			for(int i1=coord->min_x; i1 < coord->max_x; i1++,ii++) {
+		        //float x=
+				p0[ii] = vel[ii]*
+				          (
+				             coeffs[C0]*p1[ii]
+					     // x
+					     +coeffs[CX1]*(p1[ii-1]+p1[ii+1])+
+					     +coeffs[CX2]*(p1[ii-2]+p1[ii+2])+
+					     +coeffs[CX3]*(p1[ii-3]+p1[ii+3])+
+					     +coeffs[CX4]*(p1[ii-4]+p1[ii+4])+
+					     // y
+					     +coeffs[CY1]*(p1[ii-_nx]+p1[ii+_nx])+
+					     +coeffs[CY2]*(p1[ii-2*_nx]+p1[ii+2*_nx])+
+					     +coeffs[CY3]*(p1[ii-3*_nx]+p1[ii+3*_nx])+
+					     +coeffs[CY4]*(p1[ii-4*_nx]+p1[ii+4*_nx])+
+					     // z
+					     +coeffs[CZ1]*(p1[ii-1*_n12]+p1[ii+1*_n12])+
+					     +coeffs[CZ2]*(p1[ii-2*_n12]+p1[ii+2*_n12])+
+					     +coeffs[CZ3]*(p1[ii-3*_n12]+p1[ii+3*_n12])+
+					     +coeffs[CZ4]*(p1[ii-4*_n12]+p1[ii+4*_n12])
+					 )
+				        + 2*p1[ii] - p0[ii];
+				        
+				      
+			}
+		}
+	}
+	});
+tbb::tick_count t1 = tbb::tick_count::now();
+
+std::cout << "cpuProp::Prop function time in seconds:  " <<  (t1-t0).seconds() << std::endl;
+
+profiler.read();
+profiler.stop();	
+}
+
+cpuProp::index cpuProp::prop1(float *p0, const float *p1, const float *vel){
+std::cout << "Just enterint the cpuProp1 function" << std::endl;
+int count = 0;
+int min = _n123;
+int max = 0;
+tbb::parallel_for(tbb::blocked_range<int>(4,_nz-4),[&](
+  const tbb::blocked_range<int>&r){
+  for(int  i3=r.begin(); i3!=r.end(); ++i3){
+//	for(int i3=4; i3 < _nz-4; i3++){
+		for(int i2=4; i2 < _ny-4; i2++) {
+			int ii=i2*_nx+4+_n12*i3;
+			for(int i1=4; i1 < _nx-4; i1++,ii++) {
+		        float x=
+				p0[ii] = vel[ii]*
+				          (
+				             coeffs[C0]*p1[ii]
+					     // x
+					     +coeffs[CX1]*(p1[ii-1]+p1[ii+1])+
+					     +coeffs[CX2]*(p1[ii-2]+p1[ii+2])+
+					     +coeffs[CX3]*(p1[ii-3]+p1[ii+3])+
+					     +coeffs[CX4]*(p1[ii-4]+p1[ii+4])+
+					     // y
+					     +coeffs[CY1]*(p1[ii-_nx]+p1[ii+_nx])+
+					     +coeffs[CY2]*(p1[ii-2*_nx]+p1[ii+2*_nx])+
+					     +coeffs[CY3]*(p1[ii-3*_nx]+p1[ii+3*_nx])+
+					     +coeffs[CY4]*(p1[ii-4*_nx]+p1[ii+4*_nx])+
+					     // z
+					     +coeffs[CZ1]*(p1[ii-1*_n12]+p1[ii+1*_n12])+
+					     +coeffs[CZ2]*(p1[ii-2*_n12]+p1[ii+2*_n12])+
+					     +coeffs[CZ3]*(p1[ii-3*_n12]+p1[ii+3*_n12])+
+					     +coeffs[CZ4]*(p1[ii-4*_n12]+p1[ii+4*_n12])
+					 )
+				        + 2*p1[ii] - p0[ii];
+			
+					if (x != 0.0){
+					//printf("%d ",ii);
+					//total_velocity+=vel[ii];
+					count++; 
+					if (ii > max)
+						max = ii;
+					if (ii < min)
+						min = ii;
+					}	      
+					        
+				      
+			}
+		}
+	}
+	});
+
+	index index;
+	index.max = max;
+	index.min = min;
+	std::cout << "Just calculated the min and max's " << std::endl;
+	return index;
 }
 void cpuProp::transferSincTableD(int nsinc, int jtd, std::vector<std::vector<float>> &table){
 // transfer_sinc_table_d(nsinc,jtd,myr.table);

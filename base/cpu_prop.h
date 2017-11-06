@@ -1,9 +1,21 @@
 #pragma once
 #include "base_prop.h"
+#include "born_profiler.h"
 class cpuProp : public baseProp {
 public:
 cpuProp(std::shared_ptr<SEP::genericIO> io);
-
+typedef struct index {
+   int max;
+   int min;
+} index;
+typedef struct range {
+   int max_x;
+   int max_y;
+   int max_z;
+   int min_x;
+   int min_y;
+   int min_z;
+} range;
 
 virtual void rtmForward(int n1, int n2, int n3, int jt, float *img,
 	float *rec, int npts, int nt, int nt_big, int rec_nx, int rec_my);
@@ -21,7 +33,10 @@ virtual void transferReceiverFunc(int nx, int ny, int nt, std::vector<int> &locs
 virtual void transferSincTableS(int nsinc, int jts, std::vector<std::vector<float>> &table);
 virtual void createSpace(float d1, float d2, float d3,float bc_a, float bc_b, float bc_y,
 	int nx, int ny, int nz);
-void prop(float *p0, float *p1, float *vel);
+void prop(float *p0, const float *p1, const float *vel);
+void prop_range(float *p0, const float *p1, const float *vel, range *range);
+index prop1(float *p0, const float *p1, const float *vel);
+void advanceRange(range* range, int scale);
 void injectSource(int id, int ii, float *p1);
 void damp(float *p0, float *p1);
 void imageCondition(float *src, float *rec, float *image);
@@ -29,7 +44,9 @@ void injectReceivers(int id, int ii, float *p1);
 void dataExtract(int id, int ii, float *p);
 void imageAdd(float *img,  float *recField, float *srcField);
 void stats(float *buf, std::string title);
+
 private:
+
 int _nptsS;
 int _jtdD,_nsincD;
 std::vector<int> _locsR,_locsS;
@@ -47,4 +64,6 @@ float _bcA,_bcB,_bcY;   //Boundary condition
 std::vector<float>  coeffs,_bound;
 long long _n123;
 FILE *myf;
+
+
 };
